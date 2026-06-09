@@ -1020,16 +1020,25 @@ void XMLScalarFunctions::ValueToXMLFunction(DataChunk &args, ExpressionState &st
 	//	input_type.HasAlias() ? "true" : "false",
 	//	input_type.HasAlias() ? input_type.GetAlias().c_str() : "none");
 
-	// Get node name (default "xml" if not provided)
-	std::string default_node_name = "xml";
+	// Resolve the node name per row (default "xml"). A NULL node_name yields a NULL result,
+	// matching standard NULL propagation (a constant NULL second argument already folds to
+	// NULL before execution); those rows are masked out after conversion below.
+	std::vector<std::string> node_names(args.size(), "xml");
+	std::vector<bool> name_is_null(args.size(), false);
+	bool has_null_name = false;
 	if (args.ColumnCount() == 2) {
-		// Node name provided as second argument - for now, assume it's constant
-		// TODO: Handle variable node names per row
 		auto &node_name_vector = args.data[1];
-		if (node_name_vector.GetVectorType() == VectorType::CONSTANT_VECTOR) {
-			auto node_name_data = ConstantVector::GetData<string_t>(node_name_vector);
-			if (!ConstantVector::IsNull(node_name_vector)) {
-				default_node_name = node_name_data->GetString();
+		UnifiedVectorFormat name_format;
+		node_name_vector.ToUnifiedFormat(args.size(), name_format);
+		auto name_data = UnifiedVectorFormat::GetData<string_t>(name_format);
+		for (idx_t i = 0; i < args.size(); i++) {
+			auto name_idx = name_format.sel->get_index(i);
+			if (name_format.validity.RowIsValid(name_idx)) {
+				node_names[i] = name_data[name_idx].GetString();
+				XMLUtils::ValidateXMLName(node_names[i], "to_xml");
+			} else {
+				name_is_null[i] = true;
+				has_null_name = true;
 			}
 		}
 	}
@@ -1047,10 +1056,10 @@ void XMLScalarFunctions::ValueToXMLFunction(DataChunk &args, ExpressionState &st
 		});
 	} else if (input_type.id() == LogicalTypeId::LIST) {
 		// LIST → Recursive conversion
-		XMLUtils::ConvertListToXML(input_vector, result, args.size(), default_node_name);
+		XMLUtils::ConvertListToXML(input_vector, result, args.size(), node_names);
 	} else if (input_type.id() == LogicalTypeId::STRUCT) {
 		// STRUCT → Recursive conversion
-		XMLUtils::ConvertStructToXML(input_vector, result, args.size(), default_node_name);
+		XMLUtils::ConvertStructToXML(input_vector, result, args.size(), node_names);
 	} else {
 		// Check if this is an explicit JSON type (has JSON alias)
 		bool is_json_type = false;
@@ -1093,9 +1102,19 @@ void XMLScalarFunctions::ValueToXMLFunction(DataChunk &args, ExpressionState &st
 					result.SetValue(i, Value(input_str));
 				} else {
 					// Convert scalar value to XML using libxml2
-					std::string xml_result = XMLUtils::ScalarToXML(input_str, default_node_name);
+					std::string xml_result = XMLUtils::ScalarToXML(input_str, node_names[i]);
 					result.SetValue(i, Value(xml_result));
 				}
+			}
+		}
+	}
+
+	if (has_null_name) {
+		result.Flatten(args.size());
+		auto &validity = FlatVector::Validity(result);
+		for (idx_t i = 0; i < args.size(); i++) {
+			if (name_is_null[i]) {
+				validity.SetInvalid(i);
 			}
 		}
 	}

@@ -2115,6 +2115,14 @@ std::vector<std::string> XMLUtils::ExtractXMLFragmentList(const std::string &xml
 	return results;
 }
 
+void XMLUtils::ValidateXMLName(const std::string &name, const char *context) {
+	// The embedded NUL check guards against names that truncate during C-string validation.
+	if (name.find('\0') != std::string::npos ||
+	    xmlValidateName(reinterpret_cast<const xmlChar *>(name.c_str()), 0) != 0) {
+		throw InvalidInputException("%s: '%s' is not a valid XML element name", context, name);
+	}
+}
+
 std::string XMLUtils::ScalarToXML(const std::string &value, const std::string &node_name) {
 	// Use RAII-safe libxml2 document creation
 	XMLDocPtr doc(xmlNewDoc(BAD_CAST "1.0"));
@@ -2151,9 +2159,8 @@ std::string XMLUtils::ScalarToXML(const std::string &value, const std::string &n
 	}
 }
 
-void XMLUtils::ConvertListToXML(Vector &input_vector, Vector &result, idx_t count, const std::string &node_name) {
-	auto list_suffix = "_list";
-	auto element_name = node_name;
+void XMLUtils::ConvertListToXML(Vector &input_vector, Vector &result, idx_t count,
+                                const std::vector<std::string> &node_names) {
 	auto child_type = ListType::GetChildType(input_vector.GetType());
 
 	for (idx_t i = 0; i < count; i++) {
@@ -2165,14 +2172,17 @@ void XMLUtils::ConvertListToXML(Vector &input_vector, Vector &result, idx_t coun
 			continue;
 		}
 
+		auto &element_name = node_names[i];
+		auto root_name = element_name + "_list";
+
 		XMLDocPtr doc(xmlNewDoc(BAD_CAST "1.0"));
 		if (!doc) {
-			result.SetValue(i, Value("<" + node_name + list_suffix + "></" + node_name + list_suffix + ">"));
+			result.SetValue(i, Value("<" + root_name + "></" + root_name + ">"));
 			continue;
 		}
 
 		// Create root container element
-		xmlNodePtr root_node = xmlNewNode(nullptr, BAD_CAST(node_name + list_suffix).c_str());
+		xmlNodePtr root_node = xmlNewNode(nullptr, BAD_CAST root_name.c_str());
 		xmlDocSetRootElement(doc.get(), root_node);
 
 		// Process each list element
@@ -2215,15 +2225,21 @@ void XMLUtils::ConvertListToXML(Vector &input_vector, Vector &result, idx_t coun
 
 		XMLCharPtr xml_ptr(xml_string);
 		std::string xml_result = xml_ptr ? std::string(reinterpret_cast<const char *>(xml_ptr.get()))
-		                                 : "<" + node_name + list_suffix + "></" + node_name + list_suffix + ">";
+		                                 : "<" + root_name + "></" + root_name + ">";
 
 		result.SetValue(i, Value(xml_result));
 	}
 }
 
-void XMLUtils::ConvertStructToXML(Vector &input_vector, Vector &result, idx_t count, const std::string &node_name) {
+void XMLUtils::ConvertStructToXML(Vector &input_vector, Vector &result, idx_t count,
+                                  const std::vector<std::string> &node_names) {
 	auto struct_type = input_vector.GetType();
 	auto &child_types = StructType::GetChildTypes(struct_type);
+
+	// Field names become element names; reject ones that would inject markup
+	for (auto &child : child_types) {
+		ValidateXMLName(child.first, "to_xml");
+	}
 
 	for (idx_t i = 0; i < count; i++) {
 		// Vector::GetValue handles FLAT, CONSTANT and DICTIONARY input vectors safely
@@ -2234,6 +2250,7 @@ void XMLUtils::ConvertStructToXML(Vector &input_vector, Vector &result, idx_t co
 			continue;
 		}
 		auto &field_values = StructValue::GetChildren(struct_value);
+		auto &node_name = node_names[i];
 
 		XMLDocPtr doc(xmlNewDoc(BAD_CAST "1.0"));
 		if (!doc) {
@@ -2349,6 +2366,8 @@ xmlNodePtr XMLUtils::ConvertValueToXMLNode(const Value &value, const LogicalType
 			auto &field_type = child_types[i].second;
 			auto &field_value = struct_value[i];
 
+			// Field names become element names; reject ones that would inject markup
+			ValidateXMLName(field_name, "to_xml");
 			xmlNodePtr field_node = ConvertValueToXMLNode(field_value, field_type, field_name, doc);
 			if (field_node) {
 				xmlAddChild(node, field_node);

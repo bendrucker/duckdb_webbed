@@ -1,0 +1,106 @@
+# name: test/sql/to_xml_node_name.test
+# description: to_xml() node_name handling: per-row names, NULL propagation, and element name validation
+# group: [sql]
+
+require webbed
+
+# Constant node_name
+query I
+SELECT REPLACE(to_xml(1, 'a')::VARCHAR, chr(10), '');
+----
+<?xml version="1.0"?><a>1</a>
+
+# Per-row node_name from a column
+query I
+SELECT REPLACE(to_xml(x, n)::VARCHAR, chr(10), '') FROM (VALUES (1, 'a'), (2, 'b')) t(x, n) ORDER BY x;
+----
+<?xml version="1.0"?><a>1</a>
+<?xml version="1.0"?><b>2</b>
+
+# A constant NULL node_name propagates to a NULL result (standard NULL folding)
+query I
+SELECT to_xml('v', NULL) IS NULL;
+----
+true
+
+# A per-row NULL node_name also propagates to a NULL result
+query I
+SELECT REPLACE(to_xml(x, n)::VARCHAR, chr(10), '') FROM (VALUES (1, 'a'), (2, NULL), (3, 'c')) t(x, n) ORDER BY x;
+----
+<?xml version="1.0"?><a>1</a>
+NULL
+<?xml version="1.0"?><c>3</c>
+
+# NULL value still produces NULL even with a node_name
+query I
+SELECT to_xml(NULL, 'a') IS NULL;
+----
+true
+
+# Per-row node_name with LIST input
+query I
+SELECT REPLACE(to_xml(x, n)::VARCHAR, chr(10), '') FROM (VALUES (['p', 'q'], 'item'), (['r'], 'thing')) t(x, n) ORDER BY n;
+----
+<?xml version="1.0"?><item_list><item>p</item><item>q</item></item_list>
+<?xml version="1.0"?><thing_list><thing>r</thing></thing_list>
+
+# Per-row node_name with STRUCT input
+query I
+SELECT REPLACE(to_xml(x, n)::VARCHAR, chr(10), '') FROM (VALUES ({'k': 1}, 'a'), ({'k': 2}, 'b')) t(x, n) ORDER BY n;
+----
+<?xml version="1.0"?><a><k>1</k></a>
+<?xml version="1.0"?><b><k>2</k></b>
+
+# Namespace-prefixed node_name is a valid XML name
+query I
+SELECT REPLACE(to_xml(1, 'ns:a')::VARCHAR, chr(10), '');
+----
+<?xml version="1.0"?><ns:a>1</ns:a>
+
+# Injection attempt via '>' in node_name errors
+statement error
+SELECT to_xml(1, 'a><evil');
+----
+not a valid XML element name
+
+# Name starting with a digit errors
+statement error
+SELECT to_xml(1, '1bad');
+----
+not a valid XML element name
+
+# Name with a space errors
+statement error
+SELECT to_xml(1, 'has space');
+----
+not a valid XML element name
+
+# Empty name errors
+statement error
+SELECT to_xml(1, '');
+----
+not a valid XML element name
+
+# Invalid per-row node_name from a column errors
+statement error
+SELECT to_xml(x, n) FROM (VALUES (1, 'ok'), (2, 'a><evil')) t(x, n);
+----
+not a valid XML element name
+
+# Struct field names that would inject markup error
+statement error
+SELECT to_xml({'a><evil': 1});
+----
+not a valid XML element name
+
+# Nested struct field names are validated too
+statement error
+SELECT to_xml({'outer': {'a><evil': 1}});
+----
+not a valid XML element name
+
+# Struct fields inside lists are validated too
+statement error
+SELECT to_xml([{'a><evil': 1}]);
+----
+not a valid XML element name

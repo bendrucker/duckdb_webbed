@@ -266,9 +266,14 @@ public:
 	static std::vector<std::string> ExtractXMLFragmentList(const std::string &xml_str, const std::string &xpath,
 	                                                       const NamespaceConfig &ns_config);
 
-	// Complex type conversion functions for to_xml()
-	static void ConvertListToXML(Vector &input_vector, Vector &result, idx_t count, const std::string &node_name);
-	static void ConvertStructToXML(Vector &input_vector, Vector &result, idx_t count, const std::string &node_name);
+	// Complex type conversion functions for to_xml(); node_names holds the element name per row
+	static void ConvertListToXML(Vector &input_vector, Vector &result, idx_t count,
+	                             const std::vector<std::string> &node_names);
+	static void ConvertStructToXML(Vector &input_vector, Vector &result, idx_t count,
+	                               const std::vector<std::string> &node_names);
+
+	// Throws InvalidInputException if name is not a valid XML element name (prevents markup injection)
+	static void ValidateXMLName(const std::string &name, const char *context);
 
 	// Recursive value conversion for nested types - returns xmlNodePtr for direct attachment
 	static xmlNodePtr ConvertValueToXMLNode(const Value &value, const LogicalType &type, const std::string &node_name,
