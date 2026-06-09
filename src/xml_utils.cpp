@@ -18,26 +18,6 @@
 
 namespace duckdb {
 
-// Global error handling for libxml2
-static bool xml_parse_error_occurred = false;
-static std::string xml_parse_error_message;
-
-static void XMLErrorHandler(void *ctx, const char *msg, ...) {
-	xml_parse_error_occurred = true;
-	va_list args;
-	va_start(args, msg);
-	char buffer[1024];
-	vsnprintf(buffer, sizeof(buffer), msg, args);
-	va_end(args);
-	xml_parse_error_message = std::string(buffer);
-}
-
-// Silent error handler that suppresses libxml2 warnings during normal operations
-void XMLSilentErrorHandler(void *ctx, const char *msg, ...) {
-	// Silently capture errors without printing to stderr
-	xml_parse_error_occurred = true;
-}
-
 // Escape a UTF-8 string for safe embedding inside a JSON string literal (GitHub Issue #78).
 // libxml2 returns entity-decoded text (e.g. &quot; -> ", &#10; -> newline), so characters that
 // are illegal raw inside a JSON string must be re-escaped here at emit time. Only " , \ and the
@@ -87,8 +67,7 @@ static std::string EscapeJSONString(const std::string &input) {
 
 // Silent error handler for schema validation (with varargs to match xmlSchemaValidityErrorFunc)
 void XMLSilentSchemaErrorHandler(void *ctx, const char *msg, ...) {
-	// Silently capture schema validation errors without printing to stderr
-	xml_parse_error_occurred = true;
+	// Silently swallow schema validation errors without printing to stderr
 }
 
 // Forward declarations for namespace handling helpers (defined later in file)
@@ -140,10 +119,6 @@ static void RegisterDocumentNamespaces(xmlDocPtr doc, xmlXPathContextPtr xpath_c
 }
 
 XMLDocRAII::XMLDocRAII(const std::string &xml_str) {
-	// Reset error state
-	xml_parse_error_occurred = false;
-	xml_parse_error_message.clear();
-
 	// Parse the XML with options to suppress error messages (thread-safe, per-operation config)
 	// XML_PARSE_NOERROR: suppress error reports to stderr
 	// XML_PARSE_NOWARNING: suppress warning reports to stderr
@@ -155,7 +130,6 @@ XMLDocRAII::XMLDocRAII(const std::string &xml_str) {
 
 		// Check if parsing failed (NULL doc means fatal error)
 		if (!doc) {
-			xml_parse_error_occurred = true;
 			// Capture whether the failure was an allocation failure rather than malformed
 			// input. The error object belongs to the parser context, so read it before free.
 			const xmlError *last_error = xmlCtxtGetLastError(parser_ctx);
@@ -182,10 +156,6 @@ XMLDocRAII::XMLDocRAII(const std::string &xml_str) {
 }
 
 XMLDocRAII::XMLDocRAII(const std::string &content, bool is_html) {
-	// Reset error state
-	xml_parse_error_occurred = false;
-	xml_parse_error_message.clear();
-
 	if (is_html) {
 		// Parse as HTML using libxml2's HTML parser with error suppression
 		// HTML needs RECOVER flag to handle malformed HTML gracefully
@@ -218,10 +188,7 @@ XMLDocRAII::XMLDocRAII(const std::string &content, bool is_html) {
 		}
 	}
 
-	// Check if parsing failed
-	if (!doc) {
-		xml_parse_error_occurred = true;
-	} else {
+	if (doc) {
 		xpath_ctx = xmlXPathNewContext(doc);
 		// Set silent error handler on XPath context (thread-safe, per-context)
 		if (xpath_ctx) {
