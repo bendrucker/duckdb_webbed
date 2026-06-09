@@ -1,0 +1,60 @@
+# name: test/sql/xml_namespaces_rebinding.test
+# description: Test xml_namespaces with namespace prefixes rebound in nested scopes.
+#              The MAP result is keyed by prefix, so a prefix can only appear once:
+#              the FIRST declaration in document order (the outermost/root-most
+#              binding) wins. The same rule applies to the default namespace
+#              (empty-string key). xml_mock_namespaces deduplicates repeated
+#              prefixes the same way.
+# group: [sql]
+
+require webbed
+
+# Prefix rebound in a nested scope must not abort; outermost binding wins
+query I
+SELECT xml_namespaces('<r xmlns:p="urn:a"><c xmlns:p="urn:b"/></r>');
+----
+{p='urn:a'}
+
+# Default namespace rebound in a nested scope; outermost binding wins
+query I
+SELECT xml_namespaces('<r xmlns="urn:a"><c xmlns="urn:b"/></r>');
+----
+{''='urn:a'}
+
+# Undeclaring the default namespace (xmlns="") in a nested scope; outermost binding wins
+query I
+SELECT xml_namespaces('<r xmlns="urn:a"><c xmlns=""/></r>');
+----
+{''='urn:a'}
+
+# Rebinding among siblings: first declaration in document order wins
+query I
+SELECT xml_namespaces('<r><a xmlns:p="urn:a"/><b xmlns:p="urn:b"/></r>');
+----
+{p='urn:a'}
+
+# Multiple distinct prefixes are all preserved alongside a rebound one
+query II
+SELECT unnest(map_entries(xml_namespaces('<r xmlns:a="urn:a" xmlns:b="urn:b"><c xmlns:a="urn:c"/></r>')), recursive := true)
+ORDER BY 1;
+----
+a	urn:a
+b	urn:b
+
+# Same prefix bound to the same URI twice stays a single entry
+query I
+SELECT cardinality(xml_namespaces('<r xmlns:p="urn:a"><c xmlns:p="urn:a"/></r>'));
+----
+1
+
+# NULL input returns NULL
+query I
+SELECT xml_namespaces(NULL);
+----
+NULL
+
+# xml_mock_namespaces deduplicates repeated prefixes instead of aborting
+query I
+SELECT xml_mock_namespaces(['p', 'q', 'p']);
+----
+{p='urn:mock:p', q='urn:mock:q'}

@@ -734,11 +734,15 @@ void XMLScalarFunctions::XMLMockNamespacesFunction(DataChunk &args, ExpressionSt
 
 		if (!prefixes_value.IsNull() && prefixes_value.type().id() == LogicalTypeId::LIST) {
 			auto &children = ListValue::GetChildren(prefixes_value);
+			// Skip repeated prefixes: MAP keys must be unique
+			std::set<std::string> seen_prefixes;
 			for (const auto &child : children) {
 				if (!child.IsNull()) {
 					std::string prefix = child.ToString();
-					keys.emplace_back(Value(prefix));
-					values.emplace_back(Value("urn:mock:" + prefix));
+					if (seen_prefixes.insert(prefix).second) {
+						keys.emplace_back(Value(prefix));
+						values.emplace_back(Value("urn:mock:" + prefix));
+					}
 				}
 			}
 		}

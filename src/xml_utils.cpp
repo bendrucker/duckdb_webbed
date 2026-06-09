@@ -850,7 +850,10 @@ std::vector<XMLNamespace> XMLUtils::ExtractNamespaces(const std::string &xml_str
 		return namespaces;
 	}
 
-	std::set<std::pair<std::string, std::string>> seen_namespaces;
+	// Deduplicate by prefix so the result can be used as MAP keys: the first
+	// declaration in document order wins when a prefix (or the default
+	// namespace) is rebound in a nested scope.
+	std::set<std::string> seen_prefixes;
 
 	std::function<void(xmlNodePtr)> traverse_namespaces = [&](xmlNodePtr node) {
 		for (xmlNodePtr cur = node; cur; cur = cur->next) {
@@ -859,8 +862,7 @@ std::vector<XMLNamespace> XMLUtils::ExtractNamespaces(const std::string &xml_str
 				std::string prefix = cur->ns->prefix ? std::string((const char *)cur->ns->prefix) : "";
 				std::string uri = std::string((const char *)cur->ns->href);
 
-				if (seen_namespaces.find({prefix, uri}) == seen_namespaces.end()) {
-					seen_namespaces.insert({prefix, uri});
+				if (seen_prefixes.insert(prefix).second) {
 					XMLNamespace ns;
 					ns.prefix = prefix;
 					ns.uri = uri;
@@ -874,8 +876,7 @@ std::vector<XMLNamespace> XMLUtils::ExtractNamespaces(const std::string &xml_str
 					std::string prefix = ns->prefix ? std::string((const char *)ns->prefix) : "";
 					std::string uri = std::string((const char *)ns->href);
 
-					if (seen_namespaces.find({prefix, uri}) == seen_namespaces.end()) {
-						seen_namespaces.insert({prefix, uri});
+					if (seen_prefixes.insert(prefix).second) {
 						XMLNamespace namespace_decl;
 						namespace_decl.prefix = prefix;
 						namespace_decl.uri = uri;
