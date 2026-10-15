@@ -2412,8 +2412,8 @@ Value XMLSchemaInference::ExtractStructFromNode(xmlNodePtr node, const LogicalTy
 
 		// The text_key field (inference names it from options.text_key) holds the node's own text,
 		// unless a custom text_key matches an attribute or child element, which then fills the field
-		if (field_name == options.text_key && !HasAttributeOrChildNamed(node, field_name) &&
-		    IsOwnTextField(node, field_name)) {
+		if (field_name == options.text_key && !HasAttributeOrChildNamed(node, CompatIdentifierName(field_name)) &&
+		    IsOwnTextField(node, CompatIdentifierName(field_name))) {
 			xmlChar *content = xmlNodeGetContent(node);
 			if (content) {
 				std::string text = CleanTextContent((const char *)content, options.preserve_whitespace);
