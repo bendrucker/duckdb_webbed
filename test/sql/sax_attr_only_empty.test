@@ -1,22 +1,22 @@
 # name: test/sql/sax_attr_only_empty.test
-# description: SAX must extract an element that carries its own attributes the way DOM does when the column is scalar or XML. Regression for: SAX returned the raw captured payload, so an empty attribute-only element (Atom <link rel href/>) inferred as XML read '' where DOM reads NULL, a VARCHAR kept its escaped text, and a typed column read NULL.
+# description: SAX must extract an element that carries its own attributes the way DOM does. An empty attribute-only element (Atom <link rel href/>) infers as a STRUCT of its attributes on both paths, and a scalar column reads the element's text converted to the column type. Regression for: SAX returned the raw captured payload, so the attribute-only element read '' where DOM read NULL, a VARCHAR kept its escaped text, and a typed column read NULL.
 # group: [sql]
 
 require webbed
 
-query TTT
-SELECT title, typeof(link), link IS NULL
+query TTTTT
+SELECT title, typeof(link), link IS NULL, link.href, link.rel
 FROM read_xml('test/xml/sax_attr_only_empty.xml', record_element := 'entry') ORDER BY title;
 ----
-a	XML	true
-b	XML	true
+a	STRUCT(href VARCHAR, rel VARCHAR)	false	http://x/a	alternate
+b	STRUCT(href VARCHAR, rel VARCHAR)	false	http://x/b	alternate
 
-query TTT
-SELECT title, typeof(link), link IS NULL
+query TTTTT
+SELECT title, typeof(link), link IS NULL, link.href, link.rel
 FROM read_xml('test/xml/sax_attr_only_empty.xml', record_element := 'entry', maximum_file_size := 1) ORDER BY title;
 ----
-a	XML	true
-b	XML	true
+a	STRUCT(href VARCHAR, rel VARCHAR)	false	http://x/a	alternate
+b	STRUCT(href VARCHAR, rel VARCHAR)	false	http://x/b	alternate
 
 # Attribute-bearing elements in scalar columns read their text content, converted to the column type
 query III

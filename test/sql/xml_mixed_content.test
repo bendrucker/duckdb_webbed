@@ -40,7 +40,7 @@ SELECT typeof(ctx) FROM read_xml('test/xml/mixed_content/indented.xml', record_e
 ----
 STRUCT(a STRUCT(k VARCHAR), b VARCHAR)
 
-# SAX drops that indentation from an XML fragment, as DOM does
+# DOM and SAX serialize the fragment identically: indentation dropped, the empty element self-closed
 query T
 SELECT ctx::VARCHAR FROM read_xml('test/xml/mixed_content/indented.xml', record_element := 'rec', max_depth := 2, streaming := false);
 ----
@@ -49,4 +49,4 @@ SELECT ctx::VARCHAR FROM read_xml('test/xml/mixed_content/indented.xml', record_
 query T
 SELECT ctx::VARCHAR FROM read_xml('test/xml/mixed_content/indented.xml', record_element := 'rec', max_depth := 2, streaming := true, maximum_file_size := 1);
 ----
-<a k="1"></a><b>x</b>
+<a k="1"/><b>x</b>

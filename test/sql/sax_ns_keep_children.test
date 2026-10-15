@@ -9,8 +9,8 @@ SELECT title, creator, encoded, content
 FROM read_xml('test/xml/sax_ns_keep_children.xml', record_element := 'item', namespaces := 'keep')
 ORDER BY title;
 ----
-a	ann	<p>hi</p>	{'credit': c1}
-b	bob	plain	{'credit': c2}
+a	ann	<p>hi</p>	{'url': u1, 'credit': c1}
+b	bob	plain	{'url': u2, 'credit': c2}
 
 query IIII
 SELECT title, creator, encoded, content
@@ -18,8 +18,8 @@ FROM read_xml('test/xml/sax_ns_keep_children.xml', record_element := 'item', nam
   maximum_file_size := 1)
 ORDER BY title;
 ----
-a	ann	<p>hi</p>	{'credit': c1}
-b	bob	plain	{'credit': c2}
+a	ann	<p>hi</p>	{'url': u1, 'credit': c1}
+b	bob	plain	{'url': u2, 'credit': c2}
 
 # An explicit schema names the columns the same way
 query II
